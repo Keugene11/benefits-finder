@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Benefits Finder</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter','system-ui','-apple-system','sans-serif'] } } } };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    @keyframes fadeInUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+    .fade-in-up { animation: fadeInUp 0.4s ease-out forwards; }
+    .fade-in-up-delay { opacity: 0; }
+    .card-details { display:grid; grid-template-rows:0fr; transition:grid-template-rows 0.25s ease; }
+    .card-details.open { grid-template-rows:1fr; }
+    .card-details > div { overflow:hidden; }
+    @media print {
+      body { background:white!important; }
+      .no-print { display:none!important; }
+      .print-expand .card-details { grid-template-rows:1fr!important; }
+      .print-expand .chevron-btn { display:none!important; }
+      .print-expand .owned-row { display:none!important; }
+      .benefit-card { break-inside:avoid; border:1px solid #ddd!important; box-shadow:none!important; opacity:1!important; }
+      .benefit-card.owned { opacity:0.5!important; }
+    }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen font-sans">
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useRef, createContext, useContext } = React;
+
+    /* ═══════════════════════════════════════════
+       TRANSLATIONS
+    ═══════════════════════════════════════════ */
+
+    const UI = {
+      en: {
+        title: "Benefits Finder",
+        subtitle: "Discover government programs and benefits you may qualify for. Answer a few quick questions and we'll identify programs that could save you thousands of dollars each year.",
+        formTitle: "Tell us about your household",
+        formSub: "All fields are required. Your answers stay in your browser — nothing is sent anywhere.",
+        lState: "State", lSize: "Household Size", lIncome: "Annual Household Income",
+        lEmployment: "Employment Status", lChildren: "Do you have children under 18?",
+        lInsurance: "Do you have health insurance?", lVeteran: "Are you a veteran?",
+        phState: "Select your state...", phSize: "Select household size...", phIncome: "Select income range...",
+        btnFind: "Find My Benefits",
+        leaving: "You could be leaving", perYear: "/year",
+        onTable: (n) => `on the table across ${n} unclaimed benefit${n!==1?"s":""}`,
+        allClaimed: "You're already receiving all matched benefits!",
+        likely: "Likely Eligible", worth: "Worth Checking", already: "Already Receiving",
+        expandAll: "Expand All", collapseAll: "Collapse All",
+        copy: "Copy Results", copied: "Copied!", print: "Print",
+        ownedCheck: "I already receive this benefit",
+        noResults: "No matching benefits found for your profile.",
+        noResultsSub: "Try adjusting your answers to see different results.",
+        disclaimer: "This tool provides estimates only and is not legal or financial advice. Eligibility determinations are approximate and based on limited information. Please verify eligibility with the official program websites. This tool does not store any personal information.",
+        summaryTitle: "BENEFITS FINDER RESULTS", summaryProfile: "Profile",
+        summaryUnclaimed: "UNCLAIMED BENEFITS", summaryReceiving: "ALREADY RECEIVING",
+      },
+      es: {
+        title: "Buscador de Beneficios",
+        subtitle: "Descubra programas gubernamentales y beneficios para los que puede calificar. Responda algunas preguntas y le identificaremos programas que podrían ahorrarle miles de dólares cada año.",
+        formTitle: "Cuéntenos sobre su hogar",
+        formSub: "Todos los campos son obligatorios. Sus respuestas permanecen en su navegador — no se envían a ningún lugar.",
+        lState: "Estado", lSize: "Tamaño del hogar", lIncome: "Ingreso anual del hogar",
+        lEmployment: "Situación laboral", lChildren: "¿Tiene hijos menores de 18 años?",
+        lInsurance: "¿Tiene seguro médico?", lVeteran: "¿Es veterano/a?",
+        phState: "Seleccione su estado...", phSize: "Seleccione tamaño del hogar...", phIncome: "Seleccione rango de ingresos...",
+        btnFind: "Buscar Mis Beneficios",
+        leaving: "Podría estar dejando", perYear: "/año",
+        onTable: (n) => `sin reclamar en ${n} beneficio${n!==1?"s":""}`,
+        allClaimed: "¡Ya está recibiendo todos los beneficios encontrados!",
+        likely: "Probablemente elegible", worth: "Vale la pena verificar", already: "Ya lo recibe",
+        expandAll: "Expandir todo", collapseAll: "Contraer todo",
+        copy: "Copiar resultados", copied: "¡Copiado!", print: "Imprimir",
+        ownedCheck: "Ya recibo este beneficio",
+        noResults: "No se encontraron beneficios para su perfil.",
+        noResultsSub: "Intente ajustar sus respuestas para ver diferentes resultados.",
+        disclaimer: "Esta herramienta proporciona solo estimaciones y no constituye asesoramiento legal o financiero. Las determinaciones de elegibilidad son aproximadas y se basan en información limitada. Verifique la elegibilidad en los sitios web oficiales de los programas. Esta herramienta no almacena ninguna información personal.",
+        summaryTitle: "RESULTADOS DEL BUSCADOR DE BENEFICIOS", summaryProfile: "Perfil",
+        summaryUnclaimed: "BENEFICIOS SIN RECLAMAR", summaryReceiving: "YA RECIBIENDO",
+      },
+      zh: {
+        title: "福利查找器",
+        subtitle: "发现您可能有资格获得的政府计划和福利。回答几个简单问题，我们将为您找到每年可能节省数千美元的项目。",
+        formTitle: "告诉我们您的家庭情况",
+        formSub: "所有字段均为必填。您的回答保留在浏览器中，不会发送到任何地方。",
+        lState: "州", lSize: "家庭人数", lIncome: "家庭年收入",
+        lEmployment: "就业状况", lChildren: "是否有18岁以下的孩子？",
+        lInsurance: "是否有医疗保险？", lVeteran: "是否为退伍军人？",
+        phState: "选择您的州...", phSize: "选择家庭人数...", phIncome: "选择收入范围...",
+        btnFind: "查找我的福利",
+        leaving: "您可能正在错过", perYear: "/年",
+        onTable: (n) => `共 ${n} 项未申领福利`,
+        allClaimed: "您已经在领取所有匹配的福利！",
+        likely: "很可能符合资格", worth: "值得查看", already: "已在领取",
+        expandAll: "全部展开", collapseAll: "全部收起",
+        copy: "复制结果", copied: "已复制！", print: "打印",
+        ownedCheck: "我已经在领取此福利",
+        noResults: "未找到与您情况匹配的福利。",
+        noResultsSub: "尝试调整您的回答以查看不同的结果。",
+        disclaimer: "此工具仅提供估算，不构成法律或财务建议。资格判定是近似的，基于有限的信息。请在官方项目网站上验证资格。此工具不存储任何个人信息。",
+        summaryTitle: "福利查找结果", summaryProfile: "个人资料",
+        summaryUnclaimed: "未申领的福利", summaryReceiving: "已在领取",
+      },
+    };
+
+    // Option display labels per language — values stay English internally
+    const OPT_LABELS = {
+      employment: {
+        en: { Employed:"Employed", Unemployed:"Unemployed", "Self-employed":"Self-employed", Student:"Student", Retired:"Retired", Disabled:"Disabled" },
+        es: { Employed:"Empleado", Unemployed:"Desempleado", "Self-employed":"Autónomo", Student:"Estudiante", Retired:"Jubilado", Disabled:"Discapacitado" },
+        zh: { Employed:"在职", Unemployed:"失业", "Self-employed":"自雇", Student:"学生", Retired:"退休", Disabled:"残疾" },
+      },
+      yesNo: {
+        en: { Yes:"Yes", No:"No" },
+        es: { Yes:"Sí", No:"No" },
+        zh: { Yes:"是", No:"否" },
+      },
+      income: {
+        en: { "Under $20,000":"Under $20,000","$20,000 - $35,000":"$20,000 - $35,000","$35,000 - $50,000":"$35,000 - $50,000","$50,000 - $75,000":"$50,000 - $75,000","$75,000+":"$75,000+" },
+        es: { "Under $20,000":"Menos de $20,000","$20,000 - $35,000":"$20,000 - $35,000","$35,000 - $50,000":"$35,000 - $50,000","$50,000 - $75,000":"$50,000 - $75,000","$75,000+":"$75,000+" },
+        zh: { "Under $20,000":"低于 $20,000","$20,000 - $35,000":"$20,000 - $35,000","$35,000 - $50,000":"$35,000 - $50,000","$50,000 - $75,000":"$50,000 - $75,000","$75,000+":"$75,000+" },
+      },
+    };
+
+    function optList(keys, category, lang) {
+      const labels = OPT_LABELS[category][lang] || OPT_LABELS[category].en;
+      return keys.map(k => ({ value: k, label: labels[k] || k }));
+    }
+
+    // Benefit text: { [englishName]: { es:[name,desc,apply], zh:[name,desc,apply] } }
+    const BT = {
+      "SNAP / Food Stamps": {
+        es: ["SNAP / Cupones de Alimentos","Proporciona fondos mensuales en una tarjeta EBT para comprar alimentos. El monto depende del tamaño del hogar, los ingresos y los gastos.","Solicite a través de la oficina SNAP de su estado o en línea en https://www.fns.usda.gov/snap/recipient/eligibility"],
+        zh: ["SNAP / 食品券","每月在EBT卡上提供资金用于购买食品杂货。福利金额取决于家庭规模、收入和支出。","通过您所在州的SNAP办公室或在线申请 https://www.fns.usda.gov/snap/recipient/eligibility"],
+      },
+      "Medicaid": {
+        es: ["Medicaid","Cobertura médica gratuita o de bajo costo para adultos, niños, mujeres embarazadas, adultos mayores y personas con discapacidades de bajos ingresos.","Solicite en la oficina de Medicaid de su estado o en línea en https://www.healthcare.gov/medicaid-chip/getting-medicaid-chip/"],
+        zh: ["医疗补助 (Medicaid)","为符合条件的低收入成人、儿童、孕妇、老年人和残疾人提供免费或低成本医疗保险。","在您所在州的Medicaid办公室或在线申请 https://www.healthcare.gov/medicaid-chip/getting-medicaid-chip/"],
+      },
+      "CHIP (Children's Health Insurance)": {
+        es: ["CHIP (Seguro Médico para Niños)","Proporciona cobertura médica de bajo costo para niños en familias que ganan demasiado para Medicaid pero no pueden pagar un seguro privado.","Solicite en https://www.insurekidsnow.gov o llame al 1-877-KIDS-NOW (1-877-543-7669)"],
+        zh: ["儿童健康保险计划 (CHIP)","为收入过高不符合Medicaid但无力负担私人保险的家庭的儿童提供低成本医疗保险。","在 https://www.insurekidsnow.gov 申请或致电 1-877-KIDS-NOW (1-877-543-7669)"],
+      },
+      "ACA Marketplace Subsidies": {
+        es: ["Subsidios del Mercado ACA","Créditos fiscales y reducciones de costos para ayudarle a pagar el seguro médico a través del Mercado de Seguros de Salud.","Inscríbase durante la inscripción abierta en https://www.healthcare.gov/"],
+        zh: ["ACA医疗保险市场补贴","保费税收抵免和费用分摊减免，帮助您通过健康保险市场购买医疗保险。","在开放注册期间在 https://www.healthcare.gov/ 注册"],
+      },
+      "Earned Income Tax Credit (EITC)": {
+        es: ["Crédito Tributario por Ingreso del Trabajo (EITC)","Un crédito fiscal reembolsable para trabajadores de ingresos bajos a moderados, especialmente aquellos con hijos.","Reclámelo al presentar su declaración de impuestos federales. Más información en https://www.irs.gov/credits-deductions/individuals/earned-income-tax-credit-eitc"],
+        zh: ["劳动所得税抵免 (EITC)","面向低至中等收入工作个人和家庭的可退还税收抵免，尤其是有孩子的家庭。","在提交联邦纳税申报表时申领。详情请访问 https://www.irs.gov/credits-deductions/individuals/earned-income-tax-credit-eitc"],
+      },
+      "Child Tax Credit (CTC)": {
+        es: ["Crédito Tributario por Hijos (CTC)","Un crédito fiscal de hasta $2,000 por hijo calificado menor de 17 años, con hasta $1,700 reembolsable incluso si no debe impuestos.","Reclámelo al presentar su declaración de impuestos federales. Detalles en https://www.irs.gov/credits-deductions/individuals/child-tax-credit"],
+        zh: ["儿童税收抵免 (CTC)","每个17岁以下符合条件的儿童最高可获$2,000税收抵免，即使不欠税也可退还最高$1,700。","在提交联邦纳税申报表时申领。详情请访问 https://www.irs.gov/credits-deductions/individuals/child-tax-credit"],
+      },
+      "WIC (Women, Infants & Children)": {
+        es: ["WIC (Mujeres, Infantes y Niños)","Proporciona alimentos nutritivos, educación nutricional y referencias médicas para mujeres embarazadas, madres nuevas, bebés y niños menores de 5 años.","Contacte a su oficina local de WIC. Encuentre ubicaciones en https://www.fns.usda.gov/wic/wic-how-apply"],
+        zh: ["WIC妇幼营养计划","为孕妇、新妈妈、婴儿和5岁以下儿童提供营养食品、营养教育和医疗转介。","联系您当地的WIC办公室。查找地点 https://www.fns.usda.gov/wic/wic-how-apply"],
+      },
+      "National School Lunch Program": {
+        es: ["Programa Nacional de Almuerzo Escolar","Proporciona almuerzos gratuitos o a precio reducido a niños en escuelas participantes según los ingresos familiares.","Solicite a través de la escuela de su hijo. Más información en https://www.fns.usda.gov/nslp/national-school-lunch-program"],
+        zh: ["全国学校午餐计划","根据家庭收入为参与学校的儿童提供免费或减价午餐。","通过孩子的学校申请。详情请访问 https://www.fns.usda.gov/nslp/national-school-lunch-program"],
+      },
+      "Head Start / Early Head Start": {
+        es: ["Head Start / Early Head Start","Servicios gratuitos de educación infantil temprana, salud y apoyo familiar para niños de bajos ingresos desde el nacimiento hasta los 5 años.","Encuentre un programa local en https://www.acf.hhs.gov/ohs/headstartservices"],
+        zh: ["启蒙计划 (Head Start)","为低收入家庭出生至5岁的儿童提供免费的早期教育、健康和家庭支持服务。","查找当地项目 https://www.acf.hhs.gov/ohs/headstartservices"],
+      },
+      "TANF (Temporary Assistance for Needy Families)": {
+        es: ["TANF (Asistencia Temporal para Familias Necesitadas)","Proporciona asistencia económica temporal a familias de bajos ingresos con hijos, junto con capacitación laboral y servicios de apoyo.","Solicite a través del departamento de servicios humanos de su estado. Info en https://www.acf.hhs.gov/ofa/programs/tanf"],
+        zh: ["贫困家庭临时援助 (TANF)","为有孩子的低收入家庭提供临时现金援助以及职业培训和支持服务。","通过您所在州的人力服务部门申请。信息请访问 https://www.acf.hhs.gov/ofa/programs/tanf"],
+      },
+      "Section 8 Housing Choice Voucher": {
+        es: ["Sección 8 — Vales de Vivienda","Ayuda a familias de bajos ingresos, personas mayores y personas con discapacidad a pagar vivienda segura en el mercado privado subsidiando el alquiler.","Solicite a través de su Agencia de Vivienda Pública local. Encuentre la suya en https://www.hud.gov/program_offices/public_indian_housing/pha/contacts"],
+        zh: ["第八条住房选择券","通过补贴租金帮助低收入家庭、老年人和残疾人在私人市场上负担安全住房。","通过您当地的公共住房管理局申请。查找 https://www.hud.gov/program_offices/public_indian_housing/pha/contacts"],
+      },
+      "LIHEAP (Energy Assistance)": {
+        es: ["LIHEAP (Asistencia Energética)","Ayuda a hogares de bajos ingresos a pagar facturas de calefacción y refrigeración, y puede asistir con mejoras de eficiencia energética.","Solicite a través de su agencia LIHEAP estatal o local. Info en https://www.acf.hhs.gov/ocs/low-income-home-energy-assistance-program-liheap"],
+        zh: ["低收入家庭能源援助 (LIHEAP)","帮助低收入家庭支付取暖和制冷费用，也可协助进行节能住房改善。","通过您所在州或地方的LIHEAP机构申请。信息请访问 https://www.acf.hhs.gov/ocs/low-income-home-energy-assistance-program-liheap"],
+      },
+      "Lifeline Phone/Internet Discount": {
+        es: ["Lifeline — Descuento de Teléfono/Internet","Proporciona un descuento mensual de hasta $9.25 en servicio de teléfono o internet para hogares elegibles de bajos ingresos.","Solicite a través de su proveedor de teléfono/internet o en https://www.lifelinesupport.org/"],
+        zh: ["Lifeline 电话/网络折扣","为符合条件的低收入家庭提供每月最高$9.25的电话或互联网服务折扣。","通过您的电话/互联网提供商或在 https://www.lifelinesupport.org/ 申请"],
+      },
+      "Pell Grant": {
+        es: ["Beca Pell","Beca federal para estudiantes universitarios con necesidad financiera. A diferencia de los préstamos, las Becas Pell no tienen que ser devueltas.","Complete la FAFSA en https://studentaid.gov/h/apply-for-aid/fafsa"],
+        zh: ["佩尔助学金 (Pell Grant)","面向有经济需要的本科生的联邦助学金。与贷款不同，佩尔助学金不需要偿还。","在 https://studentaid.gov/h/apply-for-aid/fafsa 完成FAFSA申请"],
+      },
+      "Unemployment Insurance": {
+        es: ["Seguro de Desempleo","Proporciona pagos semanales temporales a trabajadores que han perdido su empleo sin culpa propia mientras buscan nuevo trabajo.","Presente una reclamación en la oficina de desempleo de su estado. Encuentre la suya en https://www.careeronestop.org/LocalHelp/UnemploymentBenefits/find-unemployment-benefits.aspx"],
+        zh: ["失业保险","为非因本人过错而失业的工人在寻找新工作期间提供临时每周付款。","向您所在州的失业办公室提出申请 https://www.careeronestop.org/LocalHelp/UnemploymentBenefits/find-unemployment-benefits.aspx"],
+      },
+      "SSI (Supplemental Security Income)": {
+        es: ["SSI (Seguridad de Ingreso Suplementario)","Pagos mensuales en efectivo para adultos y niños discapacitados con ingresos y recursos limitados, y para adultos de 65 años o más.","Solicite en su oficina local del Seguro Social o en línea en https://www.ssa.gov/ssi/"],
+        zh: ["补充保障收入 (SSI)","为收入和资源有限的残疾成人和儿童以及65岁以上成人提供每月现金付款。","在您当地的社会保障办公室或在线申请 https://www.ssa.gov/ssi/"],
+      },
+      "SSDI (Social Security Disability Insurance)": {
+        es: ["SSDI (Seguro de Discapacidad del Seguro Social)","Proporciona beneficios mensuales a personas que ya no pueden trabajar debido a una condición médica significativa que se espera dure al menos un año.","Solicite en línea en https://www.ssa.gov/disability/ o llame al 1-800-772-1213"],
+        zh: ["社会保障残疾保险 (SSDI)","为因预计持续至少一年的重大疾病而无法工作的人提供每月福利。","在线申请 https://www.ssa.gov/disability/ 或致电 1-800-772-1213"],
+      },
+      "Social Security Retirement Benefits": {
+        es: ["Beneficios de Jubilación del Seguro Social","Ingreso mensual de jubilación basado en su historial de ingresos. Puede reclamar a partir de los 62 años con beneficios reducidos.","Solicite en línea en https://www.ssa.gov/retirement/ o llame al 1-800-772-1213"],
+        zh: ["社会保障退休金","基于您终身收入记录的每月退休收入。最早可在62岁申领，但福利会减少。","在线申请 https://www.ssa.gov/retirement/ 或致电 1-800-772-1213"],
+      },
+      "VA Health Care": {
+        es: ["Atención Médica de VA","Servicios completos de atención médica para veteranos elegibles, incluyendo atención preventiva, hospitalización, recetas y salud mental.","Solicite en línea en https://www.va.gov/health-care/apply-for-health-care-form-10-10ez/"],
+        zh: ["退伍军人医疗保健","为符合条件的退伍军人提供全面医疗服务，包括预防保健、住院治疗、处方药和心理健康服务。","在线申请 https://www.va.gov/health-care/apply-for-health-care-form-10-10ez/"],
+      },
+      "VA Disability Compensation": {
+        es: ["Compensación por Discapacidad de VA","Pagos mensuales libres de impuestos para veteranos con discapacidades relacionadas con el servicio o condiciones causadas durante el servicio militar.","Presente una reclamación en https://www.va.gov/disability/how-to-file-claim/"],
+        zh: ["退伍军人残疾补偿","为因服役相关残疾或在服役期间引起或加重的疾病的退伍军人提供免税月付款。","在 https://www.va.gov/disability/how-to-file-claim/ 提交申请"],
+      },
+      "VA Pension": {
+        es: ["Pensión de VA","Beneficio mensual libre de impuestos para veteranos de guerra con ingresos limitados que tienen 65+ años o están permanentemente discapacitados.","Solicite en https://www.va.gov/pension/how-to-apply/"],
+        zh: ["退伍军人养老金","为收入有限、65岁以上或永久残疾的战时退伍军人提供免税月度福利。","在 https://www.va.gov/pension/how-to-apply/ 申请"],
+      },
+      "VA Education Benefits (GI Bill)": {
+        es: ["Beneficios Educativos de VA (GI Bill)","Ayuda a veteranos a pagar la universidad, posgrado y programas de capacitación, incluyendo matrícula y vivienda.","Solicite en https://www.va.gov/education/how-to-apply/"],
+        zh: ["退伍军人教育福利 (GI Bill)","帮助退伍军人和服役人员支付大学、研究生院和培训项目费用，包括学费和住房。","在 https://www.va.gov/education/how-to-apply/ 申请"],
+      },
+      "Medicare Savings Program": {
+        es: ["Programa de Ahorro de Medicare","Ayuda a pagar primas, deducibles, coseguros y copagos de Medicare para personas con ingresos y recursos limitados.","Contacte a la oficina de Medicaid de su estado. Info en https://www.medicare.gov/basics/costs/help/medicare-savings-programs"],
+        zh: ["医疗保险储蓄计划","帮助收入和资源有限的人支付Medicare保费、免赔额、共同保险和共付额。","联系您所在州的Medicaid办公室。信息请访问 https://www.medicare.gov/basics/costs/help/medicare-savings-programs"],
+      },
+    };
+
+    function bText(benefitName, field, lang) {
+      if (lang === "en") return null;
+      const entry = BT[benefitName];
+      if (!entry || !entry[lang]) return null;
+      const idx = field === "name" ? 0 : field === "description" ? 1 : 2;
+      return entry[lang][idx];
+    }
+
+    /* ═══════════════════════════════════════════
+       CONSTANTS & ELIGIBILITY ENGINE
+    ═══════════════════════════════════════════ */
+
+    const US_STATES = [
+      "Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut",
+      "Delaware","District of Columbia","Florida","Georgia","Hawaii","Idaho","Illinois",
+      "Indiana","Iowa","Kansas","Kentucky","Louisiana","Maine","Maryland","Massachusetts",
+      "Michigan","Minnesota","Mississippi","Missouri","Montana","Nebraska","Nevada",
+      "New Hampshire","New Jersey","New Mexico","New York","North Carolina","North Dakota",
+      "Ohio","Oklahoma","Oregon","Pennsylvania","Rhode Island","South Carolina",
+      "South Dakota","Tennessee","Texas","Utah","Vermont","Virginia","Washington",
+      "West Virginia","Wisconsin","Wyoming"
+    ];
+    const INCOME_RANGES = ["Under $20,000","$20,000 - $35,000","$35,000 - $50,000","$50,000 - $75,000","$75,000+"];
+    const EMPLOYMENT_OPTIONS = ["Employed","Unemployed","Self-employed","Student","Retired","Disabled"];
+    const YES_NO = ["Yes","No"];
+
+    const NON_EXPANSION_STATES = new Set(["Alabama","Florida","Georgia","Kansas","Mississippi","South Carolina","Tennessee","Texas","Wisconsin","Wyoming"]);
+    const INCOME_BOUNDS = {
+      "Under $20,000":{min:0,max:19999,mid:10000},"$20,000 - $35,000":{min:20000,max:35000,mid:27500},
+      "$35,000 - $50,000":{min:35000,max:50000,mid:42500},"$50,000 - $75,000":{min:50000,max:75000,mid:62500},
+      "$75,000+":{min:75000,max:150000,mid:90000},
+    };
+
+    function getFPL(s){const sz=s==="8+"?8:parseInt(s,10);return 15060+(sz-1)*5380;}
+    function buildProfile(fd){
+      const b=INCOME_BOUNDS[fd.income],fpl=getFPL(fd.householdSize),sz=fd.householdSize==="8+"?8:parseInt(fd.householdSize,10);
+      return{state:fd.state,size:sz,incomeMin:b.min,incomeMax:b.max,incomeMid:b.mid,fpl,
+        fplPctMin:(b.min/fpl)*100,fplPctMax:(b.max/fpl)*100,fplPctMid:(b.mid/fpl)*100,
+        employment:fd.employment,hasChildren:fd.hasChildren==="Yes",hasInsurance:fd.hasInsurance==="Yes",
+        isVeteran:fd.isVeteran==="Yes",isMedicaidExpansion:!NON_EXPANSION_STATES.has(fd.state),
+        isWorking:fd.employment==="Employed"||fd.employment==="Self-employed",
+        isDisabled:fd.employment==="Disabled",isRetired:fd.employment==="Retired",
+        isStudent:fd.employment==="Student",isUnemployed:fd.employment==="Unemployed"};
+    }
+    function checkFPL(p,t){if(p.fplPctMax<=t)return"Likely Eligible";if(p.fplPctMin<=t)return"Worth Checking";return null;}
+
+    const SNAP_MAX={1:234,2:430,3:616,4:782,5:939,6:1127,7:1248,8:1426};
+    const BENEFITS_DB = [
+      {name:"SNAP / Food Stamps",description:"Provides monthly funds on an EBT card to purchase groceries. Benefit amount depends on household size, income, and expenses.",getValue:(p)=>{const mx=SNAP_MAX[Math.min(p.size,8)];return`$${Math.round(mx*0.3)}-$${mx}/month`;},how_to_apply:"Apply through your state's SNAP office or online at https://www.fns.usda.gov/snap/recipient/eligibility",check:(p)=>checkFPL(p,130)},
+      {name:"Medicaid",description:"Free or low-cost health coverage for eligible low-income adults, children, pregnant women, elderly adults, and people with disabilities.",estimated_value:"$5,000-$8,000/year",how_to_apply:"Apply at your state Medicaid office or online at https://www.healthcare.gov/medicaid-chip/getting-medicaid-chip/",check:(p)=>{if(p.hasInsurance&&!p.isDisabled)return null;if(p.isMedicaidExpansion)return checkFPL(p,138);if(p.hasChildren||p.isDisabled||p.isRetired)return checkFPL(p,75);return p.fplPctMid<=50?"Worth Checking":null;}},
+      {name:"CHIP (Children's Health Insurance)",description:"Provides low-cost health coverage to children in families that earn too much for Medicaid but can't afford private insurance.",estimated_value:"$2,000-$5,000/year",how_to_apply:"Apply at https://www.insurekidsnow.gov or call 1-877-KIDS-NOW (1-877-543-7669)",check:(p)=>{if(!p.hasChildren||p.hasInsurance)return null;return checkFPL(p,250);}},
+      {name:"ACA Marketplace Subsidies",description:"Premium tax credits and cost-sharing reductions to help you afford health insurance through the Health Insurance Marketplace.",estimated_value:"$3,000-$10,000/year",how_to_apply:"Enroll during Open Enrollment at https://www.healthcare.gov/",check:(p)=>{if(p.hasInsurance)return null;const a=p.fplPctMin>=100||p.fplPctMid>=100,b=p.fplPctMid<=400;if(a&&b)return p.fplPctMax<=400?"Likely Eligible":"Worth Checking";if(p.fplPctMax>=100&&p.fplPctMin<=400)return"Worth Checking";return null;}},
+      {name:"Earned Income Tax Credit (EITC)",description:"A refundable tax credit for low-to-moderate income working individuals and families, especially those with children.",getValue:(p)=>p.hasChildren?"$2,000-$7,430/year":"$300-$632/year",how_to_apply:"Claim when filing your federal tax return. Learn more at https://www.irs.gov/credits-deductions/individuals/earned-income-tax-credit-eitc",check:(p)=>{if(!p.isWorking)return null;const l=p.hasChildren?57000:18000;if(p.incomeMax<=l)return"Likely Eligible";if(p.incomeMid<=l)return"Worth Checking";return null;}},
+      {name:"Child Tax Credit (CTC)",description:"A tax credit of up to $2,000 per qualifying child under 17, with up to $1,700 refundable even if you owe no taxes.",getValue:(p)=>`Up to $${2000*Math.min(p.size-1,p.size)}/year`,how_to_apply:"Claim when filing your federal tax return. Details at https://www.irs.gov/credits-deductions/individuals/child-tax-credit",check:(p)=>{if(!p.hasChildren)return null;if(p.incomeMax<=200000)return"Likely Eligible";if(p.incomeMid<=200000)return"Worth Checking";return null;}},
+      {name:"WIC (Women, Infants & Children)",description:"Provides nutritious foods, nutrition education, and healthcare referrals for pregnant women, new mothers, infants, and children under 5.",estimated_value:"$50-$75/month",how_to_apply:"Contact your local WIC office. Find locations at https://www.fns.usda.gov/wic/wic-how-apply",check:(p)=>{if(!p.hasChildren)return null;return checkFPL(p,185);}},
+      {name:"National School Lunch Program",description:"Provides free or reduced-price lunches to children at participating schools based on family income.",getValue:(p)=>checkFPL(p,130)==="Likely Eligible"?"Free meals (saves $1,000-$2,000/year)":"$500-$1,500/year",how_to_apply:"Apply through your child's school. Learn more at https://www.fns.usda.gov/nslp/national-school-lunch-program",check:(p)=>{if(!p.hasChildren)return null;return checkFPL(p,185);}},
+      {name:"Head Start / Early Head Start",description:"Free early childhood education, health, and family support services for low-income children from birth to age 5.",estimated_value:"$8,000-$12,000/year",how_to_apply:"Find a local program at https://www.acf.hhs.gov/ohs/headstartservices",check:(p)=>{if(!p.hasChildren)return null;return checkFPL(p,100);}},
+      {name:"TANF (Temporary Assistance for Needy Families)",description:"Provides temporary cash assistance to low-income families with children, along with job training and support services.",estimated_value:"$200-$600/month",how_to_apply:"Apply through your state's human services department. Info at https://www.acf.hhs.gov/ofa/programs/tanf",check:(p)=>{if(!p.hasChildren)return null;return checkFPL(p,75);}},
+      {name:"Section 8 Housing Choice Voucher",description:"Helps low-income families, the elderly, and disabled people afford safe housing in the private market by subsidizing rent.",estimated_value:"$500-$1,500/month",how_to_apply:"Apply through your local Public Housing Agency. Find yours at https://www.hud.gov/program_offices/public_indian_housing/pha/contacts",check:(p)=>checkFPL(p,100)},
+      {name:"LIHEAP (Energy Assistance)",description:"Helps low-income households pay heating and cooling bills, and can also assist with weatherization and energy-related home repairs.",estimated_value:"$200-$1,000/year",how_to_apply:"Apply through your state or local LIHEAP agency. Info at https://www.acf.hhs.gov/ocs/low-income-home-energy-assistance-program-liheap",check:(p)=>checkFPL(p,150)},
+      {name:"Lifeline Phone/Internet Discount",description:"Provides a monthly discount of up to $9.25 on phone or internet service for eligible low-income households.",estimated_value:"$111/year",how_to_apply:"Apply through your phone/internet provider or at https://www.lifelinesupport.org/",check:(p)=>checkFPL(p,135)},
+      {name:"Pell Grant",description:"Federal grant for undergraduate students with financial need. Unlike loans, Pell Grants do not have to be repaid.",estimated_value:"$1,000-$7,395/year",how_to_apply:"Complete the FAFSA at https://studentaid.gov/h/apply-for-aid/fafsa",check:(p)=>{if(!p.isStudent)return null;if(p.incomeMid<=30000)return"Likely Eligible";if(p.incomeMid<=60000)return"Worth Checking";return null;}},
+      {name:"Unemployment Insurance",description:"Provides temporary weekly payments to workers who have lost their job through no fault of their own while they search for new work.",estimated_value:"$200-$600/week",how_to_apply:"File a claim with your state unemployment office. Find yours at https://www.careeronestop.org/LocalHelp/UnemploymentBenefits/find-unemployment-benefits.aspx",check:(p)=>{if(!p.isUnemployed)return null;return"Worth Checking";}},
+      {name:"SSI (Supplemental Security Income)",description:"Monthly cash payments to disabled adults and children with limited income and resources, and to adults 65 and older.",estimated_value:"$500-$943/month",how_to_apply:"Apply at your local Social Security office or online at https://www.ssa.gov/ssi/",check:(p)=>{if(!p.isDisabled&&!p.isRetired)return null;if(p.fplPctMid<=100)return"Likely Eligible";if(p.fplPctMid<=130)return"Worth Checking";return null;}},
+      {name:"SSDI (Social Security Disability Insurance)",description:"Provides monthly benefits to people who can no longer work due to a significant medical condition expected to last at least one year.",estimated_value:"$800-$1,800/month",how_to_apply:"Apply online at https://www.ssa.gov/disability/ or call 1-800-772-1213",check:(p)=>{if(!p.isDisabled)return null;return"Worth Checking";}},
+      {name:"Social Security Retirement Benefits",description:"Monthly retirement income based on your lifetime earnings record. You can claim as early as age 62 with reduced benefits.",estimated_value:"$1,000-$3,500/month",how_to_apply:"Apply online at https://www.ssa.gov/retirement/ or call 1-800-772-1213",check:(p)=>{if(!p.isRetired)return null;return"Worth Checking";}},
+      {name:"VA Health Care",description:"Comprehensive health care services for eligible veterans, including preventive care, hospital care, prescriptions, and mental health services.",estimated_value:"$5,000-$15,000/year",how_to_apply:"Apply online at https://www.va.gov/health-care/apply-for-health-care-form-10-10ez/",check:(p)=>{if(!p.isVeteran)return null;return"Likely Eligible";}},
+      {name:"VA Disability Compensation",description:"Tax-free monthly payments for veterans with service-connected disabilities or conditions caused or aggravated during military service.",estimated_value:"$165-$3,737/month",how_to_apply:"File a claim at https://www.va.gov/disability/how-to-file-claim/",check:(p)=>{if(!p.isVeteran)return null;if(p.isDisabled)return"Likely Eligible";return"Worth Checking";}},
+      {name:"VA Pension",description:"Tax-free monthly benefit for wartime veterans with limited income who are 65+ or permanently disabled.",estimated_value:"$600-$1,500/month",how_to_apply:"Apply at https://www.va.gov/pension/how-to-apply/",check:(p)=>{if(!p.isVeteran)return null;if((p.isDisabled||p.isRetired)&&p.fplPctMid<=150)return"Likely Eligible";if(p.fplPctMid<=150)return"Worth Checking";return null;}},
+      {name:"VA Education Benefits (GI Bill)",description:"Helps veterans and service members pay for college, graduate school, and training programs, including tuition and housing.",estimated_value:"$10,000-$27,000/year",how_to_apply:"Apply at https://www.va.gov/education/how-to-apply/",check:(p)=>{if(!p.isVeteran)return null;if(p.isStudent)return"Likely Eligible";return"Worth Checking";}},
+      {name:"Medicare Savings Program",description:"Helps pay Medicare premiums, deductibles, coinsurance, and copayments for people with limited income and resources.",estimated_value:"$2,000-$5,000/year",how_to_apply:"Contact your state Medicaid office. Info at https://www.medicare.gov/basics/costs/help/medicare-savings-programs",check:(p)=>{if(!p.isRetired)return null;return checkFPL(p,135);}},
+    ];
+
+    function findBenefits(formData){
+      const profile=buildProfile(formData);const matched=[];
+      for(const b of BENEFITS_DB){const c=b.check(profile);if(!c)continue;
+        matched.push({name:b.name,description:b.description,estimated_value:b.getValue?b.getValue(profile):b.estimated_value,how_to_apply:b.how_to_apply,confidence:c});}
+      matched.sort((a,b)=>a.confidence===b.confidence?0:a.confidence==="Likely Eligible"?-1:1);
+      return matched;
+    }
+
+    /* ═══════════════════════════════════════════
+       HELPERS
+    ═══════════════════════════════════════════ */
+
+    function renderWithLinks(text){
+      const parts=text.split(/(https?:\/\/[^\s),]+)/g);
+      return parts.map((p,i)=>p.match(/^https?:\/\//)?<a key={i} href={p} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline break-all">{p}</a>:p);
+    }
+    function estimateYearlyTotal(benefits){
+      let total=0;for(const b of benefits){const v=b.estimated_value||"";const a=v.match(/\$[\d,]+/g);if(!a)continue;
+      const nums=a.map(x=>parseInt(x.replace(/[$,]/g,""),10));const avg=nums.reduce((s,n)=>s+n,0)/nums.length;
+      if(/\/month/i.test(v))total+=avg*12;else if(/\/week/i.test(v))total+=avg*52;else total+=avg;}return Math.round(total);
+    }
+    function formatCurrency(a){return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0}).format(a);}
+
+    function buildPlainTextSummary(results,ownedNames,formData,unclaimedTotal,lang){
+      const t=UI[lang];const lines=[];
+      lines.push(t.summaryTitle);lines.push("=".repeat(40));
+      lines.push(`${t.summaryProfile}: ${formData.state} | ${formData.householdSize} | ${formData.income} | ${formData.employment}`);
+      lines.push("");
+      const uncl=results.filter(b=>!ownedNames.has(b.name));const cl=results.filter(b=>ownedNames.has(b.name));
+      if(uncl.length>0){lines.push(`${t.summaryUnclaimed} (${uncl.length}) — ${formatCurrency(unclaimedTotal)}${t.perYear}`);lines.push("-".repeat(40));
+        for(const b of uncl){const nm=bText(b.name,"name",lang)||b.name;const conf=b.confidence==="Likely Eligible"?t.likely:t.worth;
+          lines.push(`[${conf}] ${nm}`);lines.push(`  ${b.estimated_value}`);
+          lines.push(`  ${bText(b.name,"description",lang)||b.description}`);
+          lines.push(`  ${bText(b.name,"how_to_apply",lang)||b.how_to_apply}`);lines.push("");}}
+      if(cl.length>0){lines.push(`${t.summaryReceiving} (${cl.length})`);lines.push("-".repeat(40));
+        for(const b of cl)lines.push(`  ✓ ${bText(b.name,"name",lang)||b.name} — ${b.estimated_value}`);lines.push("");}
+      lines.push(t.disclaimer);return lines.join("\n");
+    }
+
+    /* ═══════════════════════════════════════════
+       ICONS
+    ═══════════════════════════════════════════ */
+
+    const ShieldIcon=()=><svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>;
+    const DollarIcon=()=><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>;
+    const CheckBadgeIcon=()=><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.745 3.745 0 011.043 3.296A3.745 3.745 0 0121 12z"/></svg>;
+    const ClipboardIcon=()=><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11.35 3.836c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m8.9-4.414c.376.023.75.05 1.124.08 1.131.094 1.976 1.057 1.976 2.192V16.5A2.25 2.25 0 0118 18.75h-2.25m-7.5-10.5H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V18.75m-7.5-10.5h6.375c.621 0 1.125.504 1.125 1.125v9.375m-8.25-3l1.5 1.5 3-3.75"/></svg>;
+    const ChevronIcon=({open})=><svg className={`w-5 h-5 transition-transform duration-200 ${open?"rotate-180":""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>;
+
+    /* ═══════════════════════════════════════════
+       FORM COMPONENTS
+    ═══════════════════════════════════════════ */
+
+    function SelectField({label,value,onChange,options,placeholder}){
+      return(<div><label className="block text-sm font-semibold text-gray-700 mb-1.5">{label}</label>
+        <select value={value} onChange={e=>onChange(e.target.value)} className="w-full px-4 py-2.5 bg-white border-2 border-gray-200 rounded-lg text-gray-800 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all appearance-none cursor-pointer">
+          <option value="">{placeholder}</option>
+          {options.map(opt=>{const v=typeof opt==="string"?opt:opt.value;const l=typeof opt==="string"?opt:opt.label;return<option key={v} value={v}>{l}</option>;})}
+        </select></div>);
+    }
+
+    function ToggleGroup({label,value,onChange,options}){
+      return(<div><label className="block text-sm font-semibold text-gray-700 mb-1.5">{label}</label>
+        <div className={`grid gap-2 ${options.length<=3?"grid-cols-"+options.length:"grid-cols-2 sm:grid-cols-3"}`}>
+          {options.map(opt=>{const v=typeof opt==="string"?opt:opt.value;const l=typeof opt==="string"?opt:opt.label;
+            return(<label key={v} className={`text-center py-2.5 px-3 rounded-lg border-2 cursor-pointer transition-all text-sm font-medium ${value===v?"border-blue-500 bg-blue-50 text-blue-700 shadow-sm":"border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"}`}>
+              <input type="radio" className="sr-only" checked={value===v} onChange={()=>onChange(v)}/>{l}</label>);})}
+        </div></div>);
+    }
+
+    /* ═══════════════════════════════════════════
+       BENEFIT CARD
+    ═══════════════════════════════════════════ */
+
+    function BenefitCard({benefit,index,isOwned,onToggleOwned,isExpanded,onToggleExpand,lang}){
+      const t=UI[lang];const isLikely=benefit.confidence==="Likely Eligible";
+      const bc=isLikely?"border-l-green-500":"border-l-amber-400";
+      const tb=isLikely?"bg-gradient-to-r from-green-400 to-emerald-500":"bg-gradient-to-r from-amber-400 to-yellow-500";
+      const badge=isLikely?"bg-green-50 text-green-700 ring-1 ring-green-200":"bg-amber-50 text-amber-700 ring-1 ring-amber-200";
+      const name=bText(benefit.name,"name",lang)||benefit.name;
+      const desc=bText(benefit.name,"description",lang)||benefit.description;
+      const apply=bText(benefit.name,"how_to_apply",lang)||benefit.how_to_apply;
+      const confLabel=isLikely?t.likely:t.worth;
+      return(
+        <div className={`benefit-card fade-in-up-delay bg-white rounded-xl shadow-sm border border-gray-100 border-l-4 ${bc} overflow-hidden transition-all ${isOwned?"owned opacity-50":"hover:shadow-md"}`}
+          style={{animation:`fadeInUp 0.4s ease-out ${index*0.08}s forwards`}}>
+          <div className={`h-1 ${tb}`}/>
+          <div className="p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className={`text-base font-bold leading-tight ${isOwned?"text-gray-400 line-through":"text-gray-900"}`}>{name}</h3>
+                  <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${badge}`}>
+                    {isLikely?<CheckBadgeIcon/>:null}{confLabel}</span>
+                </div>
+                <div className="flex items-center gap-1.5 mt-2">
+                  <span className={isOwned?"text-gray-400":"text-blue-600"}><DollarIcon/></span>
+                  <span className={`text-sm font-semibold ${isOwned?"text-gray-400":"text-blue-700"}`}>{benefit.estimated_value}</span>
+                </div>
+              </div>
+              <button type="button" onClick={onToggleExpand} className="chevron-btn shrink-0 p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors" aria-label="toggle">
+                <ChevronIcon open={isExpanded}/></button>
+            </div>
+            <div className={`card-details ${isExpanded?"open":""}`}><div><div className="pt-4 space-y-3">
+              <p className="text-gray-600 text-sm leading-relaxed">{desc}</p>
+              <div className="flex items-start gap-2 px-3 py-2.5 bg-gray-50 rounded-lg">
+                <span className="text-gray-500 mt-0.5 shrink-0"><ClipboardIcon/></span>
+                <p className="text-sm text-gray-700 leading-relaxed">{renderWithLinks(apply)}</p>
+              </div></div></div></div>
+            <label className="owned-row flex items-center gap-2 mt-3 pt-3 border-t border-gray-100 cursor-pointer group select-none">
+              <input type="checkbox" checked={isOwned} onChange={onToggleOwned} className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"/>
+              <span className="text-xs text-gray-500 group-hover:text-gray-700 transition-colors">{t.ownedCheck}</span>
+            </label>
+          </div>
+        </div>);
+    }
+
+    /* ═══════════════════════════════════════════
+       MAIN APP
+    ═══════════════════════════════════════════ */
+
+    function App(){
+      const[lang,setLang]=useState("en");
+      const[formData,setFormData]=useState({state:"",householdSize:"",income:"",employment:"",hasChildren:"",hasInsurance:"",isVeteran:""});
+      const[results,setResults]=useState(null);
+      const[ownedNames,setOwnedNames]=useState(new Set());
+      const[expandedCards,setExpandedCards]=useState(new Set());
+      const[copied,setCopied]=useState(false);
+      const resultsRef=useRef(null);
+      const t=UI[lang];
+
+      const updateField=(f,v)=>setFormData(prev=>({...prev,[f]:v}));
+      const toggleOwned=(nm)=>setOwnedNames(prev=>{const n=new Set(prev);n.has(nm)?n.delete(nm):n.add(nm);return n;});
+      const toggleExpanded=(i)=>setExpandedCards(prev=>{const n=new Set(prev);n.has(i)?n.delete(i):n.add(i);return n;});
+      const expandAll=()=>{if(results)setExpandedCards(new Set(results.map((_,i)=>i)));};
+      const collapseAll=()=>setExpandedCards(new Set());
+
+      const isFormComplete=formData.state&&formData.householdSize&&formData.income&&formData.employment&&formData.hasChildren&&formData.hasInsurance&&formData.isVeteran;
+      const handleSubmit=(e)=>{e.preventDefault();setResults(findBenefits(formData));setOwnedNames(new Set());setExpandedCards(new Set());
+        setTimeout(()=>resultsRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),150);};
+
+      const unclBenefits=results?results.filter(b=>!ownedNames.has(b.name)):[];
+      const unclTotal=estimateYearlyTotal(unclBenefits);
+      const ownedCount=ownedNames.size;
+      const likelyCount=unclBenefits.filter(b=>b.confidence==="Likely Eligible").length;
+      const worthCount=unclBenefits.filter(b=>b.confidence==="Worth Checking").length;
+
+      const handleCopy=async()=>{const txt=buildPlainTextSummary(results,ownedNames,formData,unclTotal,lang);
+        try{await navigator.clipboard.writeText(txt);}catch{const ta=document.createElement("textarea");ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);}
+        setCopied(true);setTimeout(()=>setCopied(false),2500);};
+
+      const langBtn=(code,label)=>(
+        <button key={code} type="button" onClick={()=>setLang(code)}
+          className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${lang===code?"bg-white text-blue-700 shadow-sm":"text-blue-200 hover:text-white hover:bg-white/10"}`}>
+          {label}</button>);
+
+      return(
+        <div className="min-h-screen flex flex-col print-expand">
+          <header className="bg-gradient-to-br from-blue-800 via-blue-700 to-teal-600 text-white no-print">
+            <div className="max-w-4xl mx-auto px-4 py-10 sm:py-14">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-3 mb-3"><ShieldIcon/>
+                    <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">{t.title}</h1></div>
+                  <p className="text-blue-100 text-lg max-w-2xl leading-relaxed">{t.subtitle}</p>
+                </div>
+                <div className="flex gap-1 bg-white/10 rounded-full p-1 shrink-0">
+                  {langBtn("en","EN")}{langBtn("es","ES")}{langBtn("zh","中文")}
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-8">
+            <form onSubmit={handleSubmit} className="no-print bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
+              <h2 className="text-xl font-bold text-gray-900 mb-1">{t.formTitle}</h2>
+              <p className="text-sm text-gray-500 mb-6">{t.formSub}</p>
+              <div className="grid gap-6 sm:grid-cols-2">
+                <SelectField label={t.lState} value={formData.state} onChange={v=>updateField("state",v)} options={US_STATES} placeholder={t.phState}/>
+                <SelectField label={t.lSize} value={formData.householdSize} onChange={v=>updateField("householdSize",v)} options={["1","2","3","4","5","6","7","8+"]} placeholder={t.phSize}/>
+                <div className="sm:col-span-2">
+                  <SelectField label={t.lIncome} value={formData.income} onChange={v=>updateField("income",v)} options={optList(INCOME_RANGES,"income",lang)} placeholder={t.phIncome}/></div>
+                <div className="sm:col-span-2">
+                  <ToggleGroup label={t.lEmployment} value={formData.employment} onChange={v=>updateField("employment",v)} options={optList(EMPLOYMENT_OPTIONS,"employment",lang)}/></div>
+                <div className="sm:col-span-2">
+                  <ToggleGroup label={t.lChildren} value={formData.hasChildren} onChange={v=>updateField("hasChildren",v)} options={optList(YES_NO,"yesNo",lang)}/></div>
+                <ToggleGroup label={t.lInsurance} value={formData.hasInsurance} onChange={v=>updateField("hasInsurance",v)} options={optList(YES_NO,"yesNo",lang)}/>
+                <ToggleGroup label={t.lVeteran} value={formData.isVeteran} onChange={v=>updateField("isVeteran",v)} options={optList(YES_NO,"yesNo",lang)}/>
+              </div>
+              <div className="mt-8">
+                <button type="submit" disabled={!isFormComplete}
+                  className={`w-full sm:w-auto px-10 py-3.5 rounded-xl font-bold text-white text-base shadow-md transition-all flex items-center justify-center gap-2 mx-auto sm:mx-0 ${isFormComplete?"bg-gradient-to-r from-blue-600 to-teal-500 hover:from-blue-700 hover:to-teal-600 hover:shadow-lg active:scale-[0.98]":"bg-gray-300 cursor-not-allowed"}`}>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+                  {t.btnFind}</button>
+              </div>
+            </form>
+
+            {results&&results.length>0&&(
+              <div ref={resultsRef} className="mt-10">
+                <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-teal-500 text-white rounded-2xl p-6 sm:p-8 mb-6 shadow-lg fade-in-up">
+                  {unclTotal>0&&<p className="text-lg text-blue-200 font-medium mb-1">{t.leaving}</p>}
+                  {unclTotal>0?(<p className="text-4xl sm:text-5xl font-extrabold tracking-tight mb-2">{formatCurrency(unclTotal)}<span className="text-2xl sm:text-3xl font-bold text-blue-200">{t.perYear}</span></p>
+                  ):(<p className="text-2xl sm:text-3xl font-extrabold mb-2">{t.allClaimed}</p>)}
+                  <p className="text-blue-100 text-base">{t.onTable(unclBenefits.length)}</p>
+                  <div className="flex flex-wrap gap-3 mt-4 text-sm">
+                    {likelyCount>0&&<span className="inline-flex items-center gap-1.5 bg-green-500/25 backdrop-blur rounded-full px-3.5 py-1.5 font-medium"><span className="w-2.5 h-2.5 bg-green-300 rounded-full"/>{likelyCount} {t.likely}</span>}
+                    {worthCount>0&&<span className="inline-flex items-center gap-1.5 bg-amber-500/25 backdrop-blur rounded-full px-3.5 py-1.5 font-medium"><span className="w-2.5 h-2.5 bg-amber-300 rounded-full"/>{worthCount} {t.worth}</span>}
+                    {ownedCount>0&&<span className="inline-flex items-center gap-1.5 bg-white/15 backdrop-blur rounded-full px-3.5 py-1.5 font-medium"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>{ownedCount} {t.already}</span>}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+                  <div className="flex gap-2 no-print">
+                    <button type="button" onClick={expandAll} className="text-xs font-medium text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">{t.expandAll}</button>
+                    <button type="button" onClick={collapseAll} className="text-xs font-medium text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">{t.collapseAll}</button>
+                  </div>
+                  <div className="flex gap-2 no-print">
+                    <button type="button" onClick={handleCopy} className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 px-4 py-2 rounded-lg transition-colors">
+                      {copied?(<><svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>{t.copied}</>)
+                      :(<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/></svg>{t.copy}</>)}</button>
+                    <button type="button" onClick={()=>window.print()} className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg transition-colors">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>
+                      {t.print}</button>
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {results.map((b,i)=><BenefitCard key={b.name} benefit={b} index={i} isOwned={ownedNames.has(b.name)} onToggleOwned={()=>toggleOwned(b.name)} isExpanded={expandedCards.has(i)} onToggleExpand={()=>toggleExpanded(i)} lang={lang}/>)}
+                </div>
+              </div>)}
+
+            {results&&results.length===0&&(
+              <div ref={resultsRef} className="mt-10 text-center py-12 bg-white rounded-2xl border border-gray-100 shadow-sm fade-in-up">
+                <p className="text-gray-500 text-lg">{t.noResults}</p>
+                <p className="text-gray-400 text-sm mt-2">{t.noResultsSub}</p></div>)}
+          </main>
+
+          <footer className="bg-gray-100 border-t border-gray-200 mt-12">
+            <div className="max-w-4xl mx-auto px-4 py-6">
+              <p className="text-xs text-gray-500 text-center leading-relaxed">{t.disclaimer}</p>
+            </div>
+          </footer>
+        </div>);
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  </script>
+</body>
+</html>
